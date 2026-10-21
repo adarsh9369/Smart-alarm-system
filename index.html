@@ -1,0 +1,469 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
+  <meta name="theme-color" content="#0d1117">
+  <meta name="description" content="Offline-Ready BLE Smart Alarm with rapid buzzer, device sync, and OLED display modes.">
+  <title>Smart Alarm BLE Pro | Offline Web Controller</title>
+  
+  <link rel="manifest" href="manifest.webmanifest">
+  <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='%2300f2fe'><path d='M12 22c1.1 0 2-.9 2-2h-4c0 1.1.9 2 2 2zm6-6v-5c0-3.07-1.63-5.64-4.5-6.32V4c0-.83-.67-1.5-1.5-1.5s-1.5.67-1.5 1.5v.68C7.64 5.36 6 7.92 6 11v5l-2 2v1h16v-1l-2-2zm-2 1H8v-6c0-2.48 1.51-4.5 4-4.5s4 2.02 4 4.5v6zM7.58 4.08L6.15 2.65C3.75 4.48 2.17 7.3 2.03 10.5h2c.15-2.65 1.51-4.97 3.55-6.42zm12.84 6.42h2c-.15-3.2-1.73-6.02-4.12-7.85l-1.42 1.43c2.03 1.45 3.4 3.77 3.54 6.42z'/></svg>">
+  
+  <!-- Modern Google Fonts -->
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;600;700;800&family=Outfit:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="style.css">
+</head>
+<body class="theme-neon">
+
+  <!-- Ambient Glow Background Canvas -->
+  <div class="ambient-glow glow-1"></div>
+  <div class="ambient-glow glow-2"></div>
+  <div class="ambient-glow glow-3"></div>
+
+  <!-- Main Container -->
+  <div class="app-layout">
+    
+    <!-- Header -->
+    <header class="app-header">
+      <div class="brand">
+        <div class="brand-icon">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <circle cx="12" cy="13" r="8"></circle>
+            <path d="M12 9v4l2.5 2.5"></path>
+            <path d="M5 3L2 6"></path>
+            <path d="M22 6L19 3"></path>
+            <path d="M6 19l-2 2"></path>
+            <path d="M18 19l2 2"></path>
+          </svg>
+          <span class="pulse-ring"></span>
+        </div>
+        <div>
+          <h1 class="brand-title">CHRONO<span class="gradient-text">SYNC</span> BLE</h1>
+          <p class="brand-subtitle">Smart Alarm &amp; Hardware Controller</p>
+        </div>
+      </div>
+
+      <div class="header-status-group">
+        <!-- Offline / Online Badge -->
+        <div id="offlineBadge" class="status-pill status-online" title="App functions 100% offline">
+          <span class="status-dot"></span>
+          <span id="offlineStatusText">OFFLINE READY</span>
+        </div>
+
+        <!-- Bluetooth Connection State Pill -->
+        <div id="bleStatusPill" class="status-pill status-disconnected">
+          <svg class="ble-icon" viewBox="0 0 24 24" fill="currentColor" width="14" height="14">
+            <path d="M17.71 7.71L12 2h-1v7.59L6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 11 14.41V22h1l5.71-5.71-4.3-4.29 4.3-4.29zM13 5.83l1.88 1.88L13 9.59V5.83zm1.88 10.46L13 18.17v-3.76l1.88 1.88z"/>
+          </svg>
+          <span id="bleStatusText">DISCONNECTED</span>
+        </div>
+      </div>
+    </header>
+
+    <!-- Top Connection Hub Card -->
+    <section class="card connection-hub" id="connectionHub">
+      <div class="connection-primary">
+        <div class="device-info-headline">
+          <div class="device-icon-wrap" id="deviceAvatarIcon">
+            <svg viewBox="0 0 24 24" width="32" height="32" fill="none" stroke="currentColor" stroke-width="2">
+              <rect x="4" y="2" width="16" height="20" rx="3"></rect>
+              <line x1="12" y1="18" x2="12.01" y2="18"></line>
+              <path d="M8 6h8"></path>
+            </svg>
+          </div>
+          <div>
+            <h2 id="connectedDeviceName" class="device-title">No Device Connected</h2>
+            <p id="connectedDeviceStatus" class="device-desc">Connect your ESP32 / Arduino BLE Smart Alarm via Bluetooth Low Energy.</p>
+          </div>
+        </div>
+
+        <div class="connection-actions">
+          <button id="btnConnectBle" class="btn btn-primary btn-glow">
+            <svg viewBox="0 0 24 24" width="18" height="18" fill="currentColor">
+              <path d="M17.71 7.71L12 2h-1v7.59L6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 11 14.41V22h1l5.71-5.71-4.3-4.29 4.3-4.29zM13 5.83l1.88 1.88L13 9.59V5.83zm1.88 10.46L13 18.17v-3.76l1.88 1.88z"/>
+            </svg>
+            <span>Connect Device via BLE</span>
+          </button>
+
+          <button id="btnDisconnectBle" class="btn btn-outline hidden">
+            <span>Disconnect</span>
+          </button>
+
+          <button id="btnSimulateBle" class="btn btn-secondary" title="Test without physical hardware">
+            <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2">
+              <circle cx="12" cy="12" r="10"></circle>
+              <polygon points="10 8 16 12 10 16 10 8"></polygon>
+            </svg>
+            <span id="simulateBtnText">Virtual Simulator</span>
+          </button>
+
+          <!-- Toggle for Device Details (Hidden by default as requested!) -->
+          <button id="btnToggleDetails" class="btn btn-ghost" aria-expanded="false">
+            <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2">
+              <circle cx="12" cy="12" r="3"></circle>
+              <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"></path>
+            </svg>
+            <span>Device Details</span>
+            <span class="chevron-indicator">▼</span>
+          </button>
+        </div>
+      </div>
+
+      <!-- ALL OTHER DEVICE DETAILS KEPT HIDDEN / COLLAPSIBLE AS REQUESTED -->
+      <div id="hiddenDeviceDetails" class="hidden-device-panel" hidden>
+        <div class="details-grid">
+          <div class="telemetry-card">
+            <span class="tel-label">Battery Level</span>
+            <div class="tel-val-wrap">
+              <span id="telBattery" class="tel-value">94%</span>
+              <div class="mini-battery-bar">
+                <div id="telBatteryBar" class="mini-battery-fill" style="width: 94%;"></div>
+              </div>
+            </div>
+          </div>
+          <div class="telemetry-card">
+            <span class="tel-label">Signal (RSSI)</span>
+            <span id="telRssi" class="tel-value">-58 dBm (Strong)</span>
+          </div>
+          <div class="telemetry-card">
+            <span class="tel-label">GATT Service UUID</span>
+            <span id="telUuid" class="tel-mono">6E400001-B5A3-F393-E0A9-E50E24DCCA9E</span>
+          </div>
+          <div class="telemetry-card">
+            <span class="tel-label">Firmware Protocol</span>
+            <span class="tel-mono">SmartAlarm-ESP32-v2.4 (UART-BLE)</span>
+          </div>
+        </div>
+
+        <!-- Live Serial / BLE Terminal -->
+        <div class="live-terminal">
+          <div class="terminal-header">
+            <span>LIVE BLE COMMUNICATION PACKETS</span>
+            <button id="btnClearLogs" class="btn-terminal-clear">Clear</button>
+          </div>
+          <div id="bleLogConsole" class="terminal-body">
+            <div class="log-entry sys">[SYSTEM] Bluetooth Low Energy client initialized. Web Bluetooth ready.</div>
+            <div class="log-entry sys">[SYSTEM] Offline Service Worker registered and operational.</div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- UNLOCKED SECTION ON DEVICE CONNECTION: DISPLAY MODE & SET ALARM -->
+    <div id="connectedWorkspace" class="dashboard-grid">
+      
+      <!-- LEFT COLUMN: DISPLAY MODE & LIVE OLED CLOCK -->
+      <section class="card display-panel">
+        <div class="card-header">
+          <div class="header-title-wrap">
+            <span class="panel-icon">📺</span>
+            <div>
+              <h3>Display Mode &amp; Live Device Clock</h3>
+              <p>Hardware OLED / LED Matrix synchronized display</p>
+            </div>
+          </div>
+          <button id="btnSyncTime" class="btn btn-sm btn-outline" title="Sync hardware RTC with browser time">
+            <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2">
+              <path d="M21.5 2v6h-6M21.34 15.57a10 10 0 1 1-.57-8.38l5.67-5.67"/>
+            </svg>
+            <span>Sync Time</span>
+          </button>
+        </div>
+
+        <!-- Smart Clock Screen Simulation -->
+        <div class="oled-screen-container" id="oledDisplayContainer">
+          <div class="oled-glare"></div>
+          <div class="oled-content">
+            <div class="oled-top-bar">
+              <span id="oledDateDisplay" class="oled-date">WED, OCT 21</span>
+              <span class="oled-badge" id="oledBleTag">BLE ACTIVE</span>
+              <span class="oled-alarm-indicator" id="oledAlarmIndicator">⏰ ALARM ON</span>
+            </div>
+            <div class="oled-time-wrap">
+              <div id="oledMainTime" class="oled-digits">15:20<span class="oled-seconds">:00</span></div>
+              <span id="oledAmPm" class="oled-ampm">PM</span>
+            </div>
+            <div class="oled-bottom-bar">
+              <span id="oledNextAlarmText">Next: 07:00 AM (Daily)</span>
+              <span id="oledBuzzerStatus">BUZZER: READY</span>
+            </div>
+          </div>
+        </div>
+
+        <!-- Display Mode Customization Controls -->
+        <div class="display-controls">
+          <div class="control-row">
+            <label class="control-label">Screen Theme (Display Mode)</label>
+            <div class="theme-selector-chips" id="themeChips">
+              <button class="chip active" data-theme="neon">Cyber Neon</button>
+              <button class="chip" data-theme="amber">Amber Matrix</button>
+              <button class="chip" data-theme="emerald">Emerald OLED</button>
+              <button class="chip" data-theme="crimson">Night Stealth</button>
+            </div>
+          </div>
+
+          <div class="control-row-grid">
+            <div class="control-group">
+              <label for="brightnessRange" class="control-label">Brightness: <span id="brightnessValText">85%</span></label>
+              <input type="range" id="brightnessRange" min="10" max="100" value="85" class="slider">
+            </div>
+
+            <div class="control-group">
+              <label class="control-label">Time Format</label>
+              <div class="toggle-switch-wrapper">
+                <button id="btnFormat12h" class="toggle-btn active">12-Hour</button>
+                <button id="btnFormat24h" class="toggle-btn">24-Hour</button>
+              </div>
+            </div>
+          </div>
+
+          <!-- Buzzer Diagnostic Manual Trigger -->
+          <div class="buzzer-quick-test-box">
+            <div>
+              <strong>Quick Buzzer Check (Jaldi-Jaldi Test)</strong>
+              <p>Test the rapid pulsating buzzer sound and hardware vibration</p>
+            </div>
+            <button id="btnTestBuzzerDirect" class="btn btn-warning">
+              <svg viewBox="0 0 24 24" width="16" height="16" fill="currentColor">
+                <path d="M3 9v6h4l5 5V4L7 9H3zm13.5 3c0-1.77-1.02-3.29-2.5-4.03v8.05c1.48-.73 2.5-2.25 2.5-4.02zM14 3.23v2.06c2.89.86 5 3.54 5 6.71s-2.11 5.85-5 6.71v2.06c4.01-.91 7-4.49 7-8.77s-2.99-7.86-7-8.77z"/>
+              </svg>
+              <span>Test Buzzer (3s)</span>
+            </button>
+          </div>
+        </div>
+      </section>
+
+      <!-- RIGHT COLUMN: SET ALARM MANAGER -->
+      <section class="card alarms-panel">
+        <div class="card-header">
+          <div class="header-title-wrap">
+            <span class="panel-icon">⏰</span>
+            <div>
+              <h3>Set Alarm (Smart Scheduler)</h3>
+              <p>Configure multiple alarms with rapid buzzer sequences</p>
+            </div>
+          </div>
+          <button id="btnNewAlarm" class="btn btn-sm btn-primary">
+            + New Alarm
+          </button>
+        </div>
+
+        <!-- Alarm Creation Form (Toggleable or In-Place) -->
+        <form id="alarmForm" class="alarm-create-card">
+          <div class="form-title">
+            <span id="formModeTitle">Add New Alarm</span>
+          </div>
+
+          <div class="form-grid">
+            <div class="form-field">
+              <label for="alarmTimeInput">Alarm Time</label>
+              <input type="time" id="alarmTimeInput" required class="input-time" value="07:00">
+            </div>
+
+            <div class="form-field">
+              <label for="alarmLabelInput">Label / Title</label>
+              <input type="text" id="alarmLabelInput" placeholder="e.g. Morning Wakeup, Gym, Medicine" class="input-text" value="Morning Wakeup">
+            </div>
+          </div>
+
+          <!-- Day Selection Pills -->
+          <div class="form-field">
+            <label>Repeat Days</label>
+            <div class="days-selector" id="daysSelector">
+              <button type="button" class="day-chip active" data-day="Mon">Mon</button>
+              <button type="button" class="day-chip active" data-day="Tue">Tue</button>
+              <button type="button" class="day-chip active" data-day="Wed">Wed</button>
+              <button type="button" class="day-chip active" data-day="Thu">Thu</button>
+              <button type="button" class="day-chip active" data-day="Fri">Fri</button>
+              <button type="button" class="day-chip" data-day="Sat">Sat</button>
+              <button type="button" class="day-chip" data-day="Sun">Sun</button>
+            </div>
+          </div>
+
+          <!-- Buzzer Tone Pattern (Jaldi-Jaldi On/Off Option!) -->
+          <div class="form-grid">
+            <div class="form-field">
+              <label for="buzzerPatternSelect">Buzzer Pattern (अलार्म मोड)</label>
+              <select id="buzzerPatternSelect" class="input-select">
+                <option value="rapid" selected>⚡ Jaldi-Jaldi On/Off (Ultra-Rapid Strobe Buzzer)</option>
+                <option value="double">🔔 Double Beep Pulse (Tu-Tu... Tu-Tu)</option>
+                <option value="continuous">📢 Continuous High Pitch Beep</option>
+                <option value="siren">🚨 Ramp Emergency Siren</option>
+              </select>
+            </div>
+
+            <div class="form-field">
+              <label for="snoozeTimeSelect">Snooze Duration</label>
+              <select id="snoozeTimeSelect" class="input-select">
+                <option value="5">5 Minutes</option>
+                <option value="10" selected>10 Minutes</option>
+                <option value="15">15 Minutes</option>
+              </select>
+            </div>
+          </div>
+
+          <div class="form-actions">
+            <button type="submit" id="btnSaveAlarm" class="btn btn-primary">
+              Save &amp; Sync to Device
+            </button>
+            <button type="button" id="btnCancelAlarmForm" class="btn btn-ghost">
+              Cancel
+            </button>
+          </div>
+        </form>
+
+        <!-- Saved Alarms List -->
+        <div class="alarms-list-header">
+          <h4>Configured Alarms (<span id="alarmCount">0</span>)</h4>
+          <span class="info-note">Automatically synced over Bluetooth</span>
+        </div>
+
+        <div id="alarmsContainer" class="alarms-container">
+          <!-- Dynamic Alarms Loaded Here -->
+        </div>
+      </section>
+
+    </div>
+
+    <!-- Arduino / Hardware Firmware Guide Modal Trigger -->
+    <footer class="app-footer">
+      <div class="footer-links">
+        <button id="btnOpenFirmwareCode" class="btn btn-ghost btn-sm">
+          <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2">
+            <polyline points="16 18 22 12 16 6"></polyline>
+            <polyline points="8 6 2 12 8 18"></polyline>
+          </svg>
+          <span>ESP32 Arduino Code (Copy &amp; Flash)</span>
+        </button>
+        <span class="divider">•</span>
+        <button id="btnTestAlarmNowModal" class="btn btn-ghost btn-sm text-highlight">
+          ⚡ Trigger Alarm Simulation Now
+        </button>
+      </div>
+      <p class="copyright-note">ChronoSync BLE Smart Alarm • Offline First PWA • Web Bluetooth API</p>
+    </footer>
+
+  </div>
+
+  <!-- ================================================================= -->
+  <!-- FULL SCREEN EMERGENCY ALARM TRIGGER MODAL (JLDI JLDI ON-OFF BUZZER) -->
+  <!-- ================================================================= -->
+  <div id="alarmActiveOverlay" class="alarm-overlay" style="display: none;" hidden>
+    <div class="strobe-effect-layer"></div>
+    <div class="alarm-modal-card">
+      
+      <div class="alarm-pulse-visualizer">
+        <div class="visualizer-wave wave-1"></div>
+        <div class="visualizer-wave wave-2"></div>
+        <div class="visualizer-wave wave-3"></div>
+        <div class="bell-icon-pulse">
+          <svg viewBox="0 0 24 24" width="64" height="64" fill="currentColor">
+            <path d="M12 22c1.1 0 2-.9 2-2h-4c0 1.1.9 2 2 2zm6-6v-5c0-3.07-1.63-5.64-4.5-6.32V4c0-.83-.67-1.5-1.5-1.5s-1.5.67-1.5 1.5v.68C7.64 5.36 6 7.92 6 11v5l-2 2v1h16v-1l-2-2z"/>
+          </svg>
+        </div>
+      </div>
+
+      <div class="alarm-alert-text">
+        <div class="alarm-badge-live">🚨 ALARM TRIGGERED 🚨</div>
+        <h2 id="triggerModalTime" class="alarm-time-display">07:00 AM</h2>
+        <h3 id="triggerModalLabel" class="alarm-title-display">Morning Wakeup</h3>
+        <p class="alarm-subtext">Buzzer active: Jaldi-Jaldi Rapid Pulse (ESP32 Signal Transmitting)</p>
+      </div>
+
+      <!-- Live sound visualizer bars -->
+      <div class="sound-bars-indicator">
+        <span class="bar"></span>
+        <span class="bar"></span>
+        <span class="bar"></span>
+        <span class="bar"></span>
+        <span class="bar"></span>
+        <span class="bar"></span>
+        <span class="bar"></span>
+        <span class="bar"></span>
+      </div>
+
+      <!-- MAIN OFF & SNOOZE BUTTONS (VHA SE OFF KRNA KA OPTION) -->
+      <div class="alarm-action-buttons">
+        <button id="btnTurnOffAlarm" class="btn-alarm-off">
+          <svg viewBox="0 0 24 24" width="28" height="28" fill="none" stroke="currentColor" stroke-width="3">
+            <line x1="18" y1="6" x2="6" y2="18"></line>
+            <line x1="6" y1="6" x2="18" y2="18"></line>
+          </svg>
+          <div class="btn-text-col">
+            <span class="main-off-title">OFF ALARM / BUZZER SHUT</span>
+            <span class="main-off-subtitle">Turn off buzzer and stop vibration</span>
+          </div>
+        </button>
+
+        <button id="btnSnoozeAlarm" class="btn-alarm-snooze">
+          <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2">
+            <circle cx="12" cy="12" r="10"></circle>
+            <polyline points="12 6 12 12 16 14"></polyline>
+          </svg>
+          <span>Snooze (<span id="activeSnoozeMinutes">5</span>m)</span>
+        </button>
+      </div>
+
+    </div>
+  </div>
+
+  <!-- ESP32 Arduino Code Modal -->
+  <div id="firmwareModal" class="modal-backdrop" style="display: none;" hidden>
+    <div class="modal-box">
+      <div class="modal-header">
+        <h3>ESP32 Arduino Firmware (BLE &amp; Buzzer Code)</h3>
+        <button id="btnCloseFirmwareModal" class="btn-close">&times;</button>
+      </div>
+      <div class="modal-body">
+        <p>This code runs on ESP32 development board. Connect a passive/active buzzer to GPIO pin 18/23. Flash with Arduino IDE.</p>
+        <div class="code-box-wrap">
+          <button id="btnCopyFirmwareCode" class="btn-copy">Copy Code</button>
+          <pre><code id="firmwareCodeBlock">/* ChronoSync ESP32 BLE Smart Alarm Firmware */
+#include &lt;BLEDevice.h&gt;
+#include &lt;BLEServer.h&gt;
+#include &lt;BLEUtils.h&gt;
+#include &lt;BLE2902.h&gt;
+
+#define BUZZER_PIN 18 // GPIO connected to buzzer (+)
+#define SERVICE_UUID "6E400001-B5A3-F393-E0A9-E50E24DCCA9E"
+#define CHAR_RX_UUID "6E400002-B5A3-F393-E0A9-E50E24DCCA9E"
+#define CHAR_TX_UUID "6E400003-B5A3-F393-E0A9-E50E24DCCA9E"
+
+bool alarmActive = false;
+String currentPattern = "rapid";
+
+void setup() {
+  Serial.begin(115200);
+  pinMode(BUZZER_PIN, OUTPUT);
+  digitalWrite(BUZZER_PIN, LOW);
+  
+  BLEDevice::init("ChronoSync_Alarm_BLE");
+  BLEServer *pServer = BLEDevice::createServer();
+  BLEService *pService = pServer-&gt;createService(SERVICE_UUID);
+  // Full sketch provided in repository: arduino_esp32_smart_alarm.ino
+}
+
+void loop() {
+  if (alarmActive) {
+    // Jaldi-Jaldi On/Off Rapid Buzzer:
+    digitalWrite(BUZZER_PIN, HIGH);
+    delay(100);
+    digitalWrite(BUZZER_PIN, LOW);
+    delay(100);
+  }
+}</code></pre>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Notification Toast Container -->
+  <div id="toastContainer" class="toast-container"></div>
+
+  <!-- App Script -->
+  <script src="app.js"></script>
+</body>
+</html>

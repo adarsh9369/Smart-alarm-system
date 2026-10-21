@@ -1,0 +1,17 @@
+{
+  "name": "ChronoSync BLE Smart Alarm",
+  "short_name": "Smart Alarm",
+  "description": "Offline-ready Web Bluetooth Smart Alarm Controller with rapid buzzer and OLED display modes.",
+  "start_url": "./index.html",
+  "display": "standalone",
+  "background_color": "#07090e",
+  "theme_color": "#00f2fe",
+  "orientation": "portrait-primary",
+  "icons": [
+    {
+      "src": "data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 512 512' fill='%2300f2fe'><rect width='512' height='512' rx='128' fill='%230f172a'/><path d='M256 416c23.2 0 42-18.8 42-42H214c0 23.2 18.8 42 42 42zm126-126v-105c0-64.5-34.2-118.4-94.5-132.7V138c0-17.4-14.1-31.5-31.5-31.5S224.5 120.6 224.5 138v14.3C164.2 166.6 130 220.5 130 285v105l-42 42v21h336v-21l-42-42zm-42 21H172v-126c0-52.1 31.7-94.5 84-94.5s84 42.4 84 94.5v126z' fill='%2300f2fe'/></svg>",
+      "sizes": "192x192 512x512",
+      "type": "image/svg+xml"
+    }
+  ]
+}

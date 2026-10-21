@@ -1,0 +1,460 @@
+/*
+ * =========================================================================================
+ * CHRONOSYNC SMART ALARM - COMPLETE ESP32 / XIAO ESP32-C3 BLE FIRMWARE
+ * =========================================================================================
+ * Board: Works with XIAO ESP32-C3 and Standard ESP32 (DevKit / NodeMCU)
+ *
+ * Hardware Components:
+ * - Microcontroller: XIAO ESP32-C3 or standard ESP32
+ * - Buzzer: Connected to D3 (GPIO 5 on Xiao, GPIO 18 on DevKit)
+ * - LED: Connected to D0 (GPIO 2 on Xiao, GPIO 2 on DevKit)
+ * - OLED Display: SH1106G / SSD1306 I2C (SDA = D4/GPIO 21, SCL = D5/GPIO 22)
+ * - RTC Module: DS3231 I2C (Automatic fallback to internal RTC if not present)
+ *
+ * Features:
+ * 1. Bluetooth Low Energy (BLE) Nordic UART server ("ChronoSync_Alarm_BLE").
+ * 2. Instant time synchronization from Phone/PC Webpage over BLE.
+ * 3. Rapid Jaldi-Jaldi Buzzer Pulsing (100ms ON / 90ms OFF) when alarm triggers.
+ * 4. Remote Buzzer OFF command directly from the web page.
+ * 5. Persistent EEPROM/Preferences storage (alarms saved across power loss).
+ * =========================================================================================
+ */
+
+#include <Wire.h>
+#include <RTClib.h>
+#include <Adafruit_GFX.h>
+#include <Adafruit_SH110X.h>
+#include <Preferences.h>
+#include <BLEDevice.h>
+#include <BLEServer.h>
+#include <BLEUtils.h>
+#include <BLE2902.h>
+
+// ---------------- Pin Configuration ----------------
+#if defined(ARDUINO_XIAO_ESP32C3) || defined(ARDUINO_SEEED_XIAO_ESP32C3)
+  #define BUZZER_PIN D3  // GPIO 5
+  #define LED_PIN    D0  // GPIO 2
+  #define OLED_SDA   D4  // GPIO 6
+  #define OLED_SCL   D5  // GPIO 7
+#else
+  // Standard ESP32
+  #define BUZZER_PIN 18  // Change to match your wiring
+  #define LED_PIN    2   // Onboard Blue LED
+  #define OLED_SDA   21
+  #define OLED_SCL   22
+#endif
+
+// ---------------- BLE UUIDs ----------------
+#define SERVICE_UUID           "6E400001-B5A3-F393-E0A9-E50E24DCCA9E"
+#define CHARACTERISTIC_UUID_RX "6E400002-B5A3-F393-E0A9-E50E24DCCA9E"
+#define CHARACTERISTIC_UUID_TX "6E400003-B5A3-F393-E0A9-E50E24DCCA9E"
+
+// ---------------- Objects ----------------
+Adafruit_SH1106G display(128, 64, &Wire, -1);
+RTC_DS3231 rtc;
+Preferences prefs;
+BLEServer *pServer = NULL;
+BLECharacteristic *pTxCharacteristic = NULL;
+
+// ---------------- State Variables ----------------
+bool bleConnected = false;
+bool rtcFound = false;
+bool oledFound = false;
+
+// Display mode: 0=Time Only, 1=Time+Date, 2=Full Details
+int displayMode = 1;
+
+// Alarm State
+int alarmHour = 7;
+int alarmMinute = 0;
+bool alarmEnabled = true;
+bool alarmRinging = false;
+String alarmPattern = "RAPID";
+
+// Jaldi-Jaldi Rapid Buzzer Timing
+unsigned long ringStarted = 0;
+const unsigned long ALARM_RING_TIMEOUT = 60000; // Auto-stop after 60s
+unsigned long lastBuzzerRapid = 0;
+bool buzzerRapidState = false;
+
+int lastAlarmYear = -1;
+int lastAlarmMonth = -1;
+int lastAlarmDay = -1;
+
+unsigned long lastOLEDUpdate = 0;
+
+// Internal software clock if hardware RTC is not connected
+unsigned long internalEpoch = 0;
+unsigned long epochSyncMillis = 0;
+
+// ---------------- Helpers ----------------
+String two(int n) {
+  return n < 10 ? "0" + String(n) : String(n);
+}
+
+DateTime getCurrentTime() {
+  if (rtcFound) {
+    return rtc.now();
+  } else {
+    // Software RTC calculation
+    unsigned long currentSec = internalEpoch + ((millis() - epochSyncMillis) / 1000);
+    return DateTime((uint32_t)currentSec);
+  }
+}
+
+void notifyWebClient(String msg) {
+  if (bleConnected && pTxCharacteristic != NULL) {
+    msg += "\n";
+    pTxCharacteristic->setValue(msg.c_str());
+    pTxCharacteristic->notify();
+  }
+}
+
+// ---------------- BLE Command Parser ----------------
+void processBleCommand(String cmd) {
+  cmd.trim();
+  Serial.print("[BLE COMMAND] ");
+  Serial.println(cmd);
+
+  // 1. BUZZER OFF (Vha se off krna ka option)
+  if (cmd.startsWith("BUZZER:OFF")) {
+    alarmRinging = false;
+    digitalWrite(BUZZER_PIN, LOW);
+    digitalWrite(LED_PIN, LOW);
+    Serial.println(">> ALARM / BUZZER SHUT OFF VIA BLE");
+    notifyWebClient("BUZZER:OFF:ACK");
+  }
+  // 2. BUZZER ON / MANUAL TEST
+  else if (cmd.startsWith("BUZZER:ON")) {
+    alarmRinging = true;
+    ringStarted = millis();
+    if (cmd.indexOf("RAPID") >= 0) alarmPattern = "RAPID";
+    else if (cmd.indexOf("DOUBLE") >= 0) alarmPattern = "DOUBLE";
+    else if (cmd.indexOf("CONTINUOUS") >= 0) alarmPattern = "CONTINUOUS";
+    else alarmPattern = "RAPID";
+    Serial.println(">> BUZZER TRIGGERED: Rapid Mode Active");
+    notifyWebClient("BUZZER:ON:ACK");
+  }
+  // 3. TIME SYNC FROM BROWSER
+  else if (cmd.startsWith("SYNC_TIME:")) {
+    // Format: SYNC_TIME:<epoch>:<HH:MM:SS>
+    int firstColon = cmd.indexOf(':');
+    int secondColon = cmd.indexOf(':', firstColon + 1);
+    if (firstColon > 0) {
+      String epochStr = cmd.substring(firstColon + 1, secondColon > 0 ? secondColon : cmd.length());
+      unsigned long epochVal = (unsigned long)epochStr.toInt();
+      
+      if (epochVal > 1000000) {
+        internalEpoch = epochVal;
+        epochSyncMillis = millis();
+
+        if (rtcFound) {
+          rtc.adjust(DateTime((uint32_t)epochVal));
+        }
+        Serial.print(">> RTC Time Calibrated: Epoch ");
+        Serial.println(epochVal);
+        notifyWebClient("TIME:SYNCED:OK");
+      }
+    }
+  }
+  // 4. SET ALARM
+  else if (cmd.startsWith("SET_ALM:")) {
+    // Format: SET_ALM:<id>:<HH:MM>:<Days>:<Pattern>
+    int p1 = cmd.indexOf(':');
+    int p2 = cmd.indexOf(':', p1 + 1);
+    int p3 = cmd.indexOf(':', p2 + 1);
+    
+    if (p2 > 0 && p3 > 0) {
+      String timePart = cmd.substring(p2 + 1, p3);
+      int colonTime = timePart.indexOf(':');
+      if (colonTime > 0) {
+        alarmHour = timePart.substring(0, colonTime).toInt();
+        alarmMinute = timePart.substring(colonTime + 1).toInt();
+        alarmEnabled = true;
+
+        // Save to preferences
+        prefs.putInt("alm_h", alarmHour);
+        prefs.putInt("alm_m", alarmMinute);
+        prefs.putBool("alm_en", alarmEnabled);
+
+        Serial.printf(">> New Alarm Saved: %02d:%02d\n", alarmHour, alarmMinute);
+        notifyWebClient("ALARM:SAVED:" + timePart);
+      }
+    }
+  }
+  // 5. TOGGLE ALARM
+  else if (cmd.startsWith("TOGGLE_ALM:")) {
+    int p = cmd.lastIndexOf(':');
+    if (p > 0) {
+      alarmEnabled = (cmd.substring(p + 1).toInt() == 1);
+      prefs.putBool("alm_en", alarmEnabled);
+      Serial.printf(">> Alarm Enabled State: %d\n", alarmEnabled);
+    }
+  }
+  // 6. DISPLAY THEME & BRIGHTNESS
+  else if (cmd.startsWith("SET_BRIGHT:")) {
+    int b = cmd.substring(11).toInt();
+    if (oledFound) {
+      display.setContrast(map(b, 0, 100, 0, 255));
+    }
+  }
+}
+
+// ---------------- BLE Callbacks ----------------
+class ServerCallbacks : public BLEServerCallbacks {
+  void onConnect(BLEServer* pServer) {
+    bleConnected = true;
+    digitalWrite(LED_PIN, HIGH);
+    Serial.println("[BLE] Web Dashboard Connected!");
+  };
+
+  void onDisconnect(BLEServer* pServer) {
+    bleConnected = false;
+    digitalWrite(LED_PIN, LOW);
+    Serial.println("[BLE] Client Disconnected. Re-advertising...");
+    BLEDevice::startAdvertising();
+  }
+};
+
+class RxCallbacks : public BLECharacteristicCallbacks {
+  void onWrite(BLECharacteristic *pCharacteristic) {
+    String rxStr = String(pCharacteristic->getValue().c_str());
+    if (rxStr.length() > 0) {
+      processBleCommand(rxStr);
+    }
+  }
+};
+
+// ---------------- OLED Screen Drawing ----------------
+void drawOLED(DateTime t) {
+  if (!oledFound) return;
+
+  display.clearDisplay();
+  display.setTextColor(SH110X_WHITE);
+
+  // Status Top Bar
+  display.setTextSize(1);
+  display.setCursor(0, 0);
+  if (bleConnected) {
+    display.print("BLE: CONNECTED");
+  } else {
+    display.print("BLE: READY");
+  }
+
+  display.setCursor(84, 0);
+  if (alarmRinging) {
+    display.print("!RING!");
+  } else if (alarmEnabled) {
+    display.print("ALM:ON");
+  } else {
+    display.print("ALM:OFF");
+  }
+
+  // Draw Horizontal Separator
+  display.drawFastHLine(0, 10, 128, SH110X_WHITE);
+
+  // Time Digits (Large)
+  display.setTextSize(2);
+  display.setCursor(16, 20);
+
+  int h = t.hour();
+  int m = t.minute();
+  int s = t.second();
+  String ampm = "";
+
+  if (displayMode == 0 || displayMode == 1) {
+    // 12-Hour format
+    ampm = (h >= 12) ? "PM" : "AM";
+    h = h % 12;
+    if (h == 0) h = 12;
+  }
+
+  display.print(two(h));
+  display.print(":");
+  display.print(two(m));
+
+  display.setTextSize(1);
+  display.setCursor(80, 24);
+  display.print(":" + two(s));
+  display.setCursor(102, 24);
+  display.print(ampm);
+
+  // Bottom Line: Alarm info or Date
+  display.drawFastHLine(0, 46, 128, SH110X_WHITE);
+  display.setCursor(0, 52);
+  display.setTextSize(1);
+  if (alarmRinging) {
+    display.print(">> BUZZER ACTIVE <<");
+  } else {
+    display.printf("Alarm: %02d:%02d | %s", alarmHour, alarmMinute, alarmEnabled ? "ON" : "OFF");
+  }
+
+  display.display();
+}
+
+// ---------------- Setup ----------------
+void setup() {
+  Serial.begin(115200);
+  delay(500);
+  Serial.println("\n--- ChronoSync Smart Alarm ESP32 BLE Starting ---");
+
+  // Output Pins
+  pinMode(BUZZER_PIN, OUTPUT);
+  pinMode(LED_PIN, OUTPUT);
+  digitalWrite(BUZZER_PIN, LOW);
+  digitalWrite(LED_PIN, LOW);
+
+  // Preferences (Saved alarms)
+  prefs.begin("chrono_alm", false);
+  alarmHour = prefs.getInt("alm_h", 7);
+  alarmMinute = prefs.getInt("alm_m", 0);
+  alarmEnabled = prefs.getBool("alm_en", true);
+
+  // I2C
+  Wire.begin(OLED_SDA, OLED_SCL);
+
+  // OLED Init
+  if (display.begin(0x3C, true)) {
+    oledFound = true;
+    display.clearDisplay();
+    display.setTextColor(SH110X_WHITE);
+    display.setTextSize(1);
+    display.setCursor(10, 20);
+    display.println("ChronoSync BLE");
+    display.setCursor(10, 36);
+    display.println("Smart Alarm Ready");
+    display.display();
+    delay(1000);
+  } else {
+    Serial.println("Note: OLED SH1106 not detected on 0x3C.");
+  }
+
+  // RTC Init
+  if (rtc.begin()) {
+    rtcFound = true;
+    Serial.println("RTC DS3231 Initialized successfully.");
+    if (rtc.lostPower()) {
+      rtc.adjust(DateTime(F(__DATE__), F(__TIME__)));
+    }
+  } else {
+    Serial.println("Note: RTC DS3231 not found. Using internal software clock with BLE sync.");
+    internalEpoch = 1700000000; // Baseline
+    epochSyncMillis = millis();
+  }
+
+  // BLE Setup
+  BLEDevice::init("ChronoSync_Alarm_BLE");
+  pServer = BLEDevice::createServer();
+  pServer->setCallbacks(new ServerCallbacks());
+
+  BLEService *pService = pServer->createService(SERVICE_UUID);
+
+  // TX Characteristic (Send updates to browser)
+  pTxCharacteristic = pService->createCharacteristic(
+                        CHARACTERISTIC_UUID_TX,
+                        BLECharacteristic::PROPERTY_NOTIFY
+                      );
+  pTxCharacteristic->addDescriptor(new BLE2902());
+
+  // RX Characteristic (Receive commands from browser)
+  BLECharacteristic *pRxCharacteristic = pService->createCharacteristic(
+                                           CHARACTERISTIC_UUID_RX,
+                                           BLECharacteristic::PROPERTY_WRITE
+                                         );
+  pRxCharacteristic->setCallbacks(new RxCallbacks());
+
+  pService->start();
+
+  // Advertising
+  BLEAdvertising *pAdvertising = BLEDevice::getAdvertising();
+  pAdvertising->addServiceUUID(SERVICE_UUID);
+  pAdvertising->setScanResponse(true);
+  pAdvertising->setMinPreferred(0x06);
+  pAdvertising->setMinPreferred(0x12);
+  BLEDevice::startAdvertising();
+
+  Serial.println("BLE Advertising started as 'ChronoSync_Alarm_BLE'");
+  Serial.printf("Current Alarm: %02d:%02d (Enabled: %d)\n", alarmHour, alarmMinute, alarmEnabled);
+}
+
+// ---------------- Main Loop ----------------
+void loop() {
+  DateTime now = getCurrentTime();
+
+  // Trigger Daily Alarm when time matches
+  if (alarmEnabled && !alarmRinging &&
+      now.hour() == alarmHour &&
+      now.minute() == alarmMinute &&
+      now.second() == 0 &&
+      (lastAlarmYear != now.year() ||
+       lastAlarmMonth != now.month() ||
+       lastAlarmDay != now.day())) {
+
+    alarmRinging = true;
+    ringStarted = millis();
+
+    lastAlarmYear = now.year();
+    lastAlarmMonth = now.month();
+    lastAlarmDay = now.day();
+
+    Serial.println(">>> ALARM TRIGGERED! Rapid Buzzer Ringing <<<");
+    notifyWebClient("ALARM_TRIGGERED:NOW");
+  }
+
+  // ====================================================================
+  // JALDI-JALDI RAPID BUZZER ENGINE (100ms ON / 90ms OFF)
+  // ====================================================================
+  if (alarmRinging) {
+    unsigned long currentMillis = millis();
+
+    if (alarmPattern == "RAPID") {
+      // Jaldi-Jaldi On/Off: 100ms ON (Beep), 90ms OFF (Silence)
+      unsigned long duration = buzzerRapidState ? 100 : 90;
+      if (currentMillis - lastBuzzerRapid >= duration) {
+        lastBuzzerRapid = currentMillis;
+        buzzerRapidState = !buzzerRapidState;
+        digitalWrite(BUZZER_PIN, buzzerRapidState ? HIGH : LOW);
+        digitalWrite(LED_PIN, buzzerRapidState ? HIGH : LOW);
+      }
+    } 
+    else if (alarmPattern == "DOUBLE") {
+      // Double Beep
+      static int subStep = 0;
+      unsigned long intervals[] = {80, 80, 80, 350};
+      if (currentMillis - lastBuzzerRapid >= intervals[subStep]) {
+        lastBuzzerRapid = currentMillis;
+        subStep = (subStep + 1) % 4;
+        bool bState = (subStep == 0 || subStep == 2);
+        digitalWrite(BUZZER_PIN, bState ? HIGH : LOW);
+        digitalWrite(LED_PIN, bState ? HIGH : LOW);
+      }
+    }
+    else {
+      // Continuous
+      digitalWrite(BUZZER_PIN, HIGH);
+      digitalWrite(LED_PIN, HIGH);
+    }
+
+    // Auto-stop timeout (1 minute)
+    if (currentMillis - ringStarted >= ALARM_RING_TIMEOUT) {
+      alarmRinging = false;
+      digitalWrite(BUZZER_PIN, LOW);
+      digitalWrite(LED_PIN, LOW);
+      Serial.println(">> Alarm auto-stopped after 60s timeout.");
+    }
+  } else {
+    // When not ringing, ensure pins are completely OFF
+    digitalWrite(BUZZER_PIN, LOW);
+    if (!bleConnected) {
+      digitalWrite(LED_PIN, LOW);
+    }
+  }
+
+  // Refresh OLED Display every 250ms
+  if (millis() - lastOLEDUpdate >= 250) {
+    lastOLEDUpdate = millis();
+    drawOLED(now);
+  }
+
+  delay(2);
+}
