@@ -142,10 +142,33 @@ void processBleCommand(String cmd) {
     String dateTimeStr = cmd.substring(10);
     dateTimeStr.trim();
 
-    DateTime syncedTime(dateTimeStr.c_str());
+    // Parse YYYY-MM-DDTHH:MM:SS without relying on a non-existent
+    // single-string DateTime constructor in RTClib.
+    DateTime syncedTime(2000, 1, 1, 0, 0, 0);
+    if (dateTimeStr.length() == 19 &&
+        dateTimeStr.charAt(4) == '-' &&
+        dateTimeStr.charAt(7) == '-' &&
+        dateTimeStr.charAt(10) == 'T' &&
+        dateTimeStr.charAt(13) == ':' &&
+        dateTimeStr.charAt(16) == ':') {
+      int year = dateTimeStr.substring(0, 4).toInt();
+      int month = dateTimeStr.substring(5, 7).toInt();
+      int day = dateTimeStr.substring(8, 10).toInt();
+      int hour = dateTimeStr.substring(11, 13).toInt();
+      int minute = dateTimeStr.substring(14, 16).toInt();
+      int second = dateTimeStr.substring(17, 19).toInt();
+      if (year >= 2024 && year <= 2099 &&
+          month >= 1 && month <= 12 && day >= 1 && day <= 31 &&
+          hour >= 0 && hour <= 23 && minute >= 0 && minute <= 59 &&
+          second >= 0 && second <= 59) {
+        syncedTime = DateTime(year, month, day, hour, minute, second);
+      }
+    }
+
     if (syncedTime.isValid() &&
         syncedTime.year() >= 2024 &&
-        syncedTime.year() <= 2099) {
+        syncedTime.year() <= 2099 &&
+        dateTimeStr.length() == 19) {
       if (rtcFound) {
         rtc.adjust(syncedTime);
       }
