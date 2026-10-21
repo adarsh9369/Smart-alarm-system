@@ -174,12 +174,27 @@ void processBleCommand(String cmd) {
       int firstColon = dateTimeStr.indexOf(':');
       if (firstColon > 0) {
         uint32_t epoch = (uint32_t)dateTimeStr.substring(0, firstColon).toInt();
-        DateTime epochTime(epoch);
+        // Legacy webpage sends Unix epoch (UTC) followed by browser-local HH:MM:SS.
+        // This alarm is used in India, so convert UTC epoch to IST (UTC+05:30).
+        DateTime epochTime(epoch + 19800UL);
         if (epoch >= 1700000000UL && epochTime.year() >= 2024 && epochTime.year() <= 2099) {
           syncedTime = DateTime(epochTime.year(), epochTime.month(), epochTime.day(),
                                 epochTime.hour(), epochTime.minute(), epochTime.second());
+          // Prefer the explicit browser-local time fields when present.
+          int p2 = dateTimeStr.indexOf(':', firstColon + 1);
+          int p3 = dateTimeStr.indexOf(':', p2 + 1);
+          if (p2 > 0 && p3 > 0) {
+            int localHour = dateTimeStr.substring(firstColon + 1, p2).toInt();
+            int localMinute = dateTimeStr.substring(p2 + 1, p3).toInt();
+            int localSecond = dateTimeStr.substring(p3 + 1).toInt();
+            if (localHour >= 0 && localHour <= 23 && localMinute >= 0 && localMinute <= 59 &&
+                localSecond >= 0 && localSecond <= 59) {
+              syncedTime = DateTime(epochTime.year(), epochTime.month(), epochTime.day(),
+                                    localHour, localMinute, localSecond);
+            }
+          }
           parsedTime = true;
-          Serial.println(">> Legacy epoch time format accepted.");
+          Serial.println(">> Legacy epoch time format accepted (IST/local time).");
         }
       }
     }
