@@ -620,10 +620,15 @@ function handleHardwareNotification(event) {
 
 function syncTimeToDevice() {
   const now = new Date();
-  const timeStr = `${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}:${String(now.getSeconds()).padStart(2, '0')}`;
-  const epoch = Math.floor(now.getTime() / 1000);
-  sendBleCommand(`SYNC_TIME:${epoch}:${timeStr}`);
-  showToast(`Hardware Time Synced: ${timeStr}`, 'success');
+
+  // Send local date + time explicitly. RTClib does not apply time zones to Unix epochs.
+  // Format expected by firmware: SYNC_TIME:YYYY-MM-DDTHH:MM:SS
+  const localDateTime =
+    `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}T` +
+    `${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}:${String(now.getSeconds()).padStart(2, '0')}`;
+
+  sendBleCommand(`SYNC_TIME:${localDateTime}`);
+  logToConsole(`Requested hardware RTC sync over BLE: ${localDateTime.replace('T', ' ')}`, 'ble-tx');
 }
 
 function syncAllAlarmsToDevice() {
