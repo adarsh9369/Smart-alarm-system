@@ -135,26 +135,32 @@ void processBleCommand(String cmd) {
     Serial.println(">> BUZZER TRIGGERED: Rapid Mode Active");
     notifyWebClient("BUZZER:ON:ACK");
   }
-  // 3. TIME SYNC FROM BROWSER
+  // 3. TIME SYNC FROM BROWSER (local date/time; no Wi-Fi required)
   else if (cmd.startsWith("SYNC_TIME:")) {
-    // Format: SYNC_TIME:<epoch>:<HH:MM:SS>
-    int firstColon = cmd.indexOf(':');
-    int secondColon = cmd.indexOf(':', firstColon + 1);
-    if (firstColon > 0) {
-      String epochStr = cmd.substring(firstColon + 1, secondColon > 0 ? secondColon : cmd.length());
-      unsigned long epochVal = (unsigned long)epochStr.toInt();
-      
-      if (epochVal > 1000000) {
-        internalEpoch = epochVal;
-        epochSyncMillis = millis();
+    // Preferred format: SYNC_TIME:YYYY-MM-DDTHH:MM:SS
+    // The browser sends local wall-clock time so the RTC displays the same local time.
+    String dateTimeStr = cmd.substring(10);
+    dateTimeStr.trim();
 
-        if (rtcFound) {
-          rtc.adjust(DateTime((uint32_t)epochVal));
-        }
-        Serial.print(">> RTC Time Calibrated: Epoch ");
-        Serial.println(epochVal);
-        notifyWebClient("TIME:SYNCED:OK");
+    DateTime syncedTime(dateTimeStr.c_str());
+    if (syncedTime.isValid() &&
+        syncedTime.year() >= 2024 &&
+        syncedTime.year() <= 2099) {
+      if (rtcFound) {
+        rtc.adjust(syncedTime);
       }
+
+      // Keep the software clock in sync too, for boards without a DS3231.
+      internalEpoch = syncedTime.unixtime();
+      epochSyncMillis = millis();
+
+      Serial.print(">> Local date/time synced over BLE: ");
+      Serial.println(syncedTime.timestamp());
+      notifyWebClient("TIME:SYNCED:OK");
+    } else {
+      Serial.print(">> Invalid SYNC_TIME format: ");
+      Serial.println(dateTimeStr);
+      notifyWebClient("TIME:SYNCED:ERROR");
     }
   }
   // 4. SET ALARM
@@ -279,9 +285,20 @@ void drawOLED(DateTime t) {
   display.setCursor(102, 24);
   display.print(ampm);
 
-  // Bottom Line: Alarm info or Date
-  display.drawFastHLine(0, 46, 128, SH110X_WHITE);
-  display.setCursor(0, 52);
+  // Weekday + date (derived from RTC/software clock)
+  static const char *weekdays[] = {
+    "Sunday", "Monday", "Tuesday", "Wednesday",
+    "Thursday", "Friday", "Saturday"
+  };
+  display.setTextSize(1);
+  display.setCursor(0, 39);
+  display.print(weekdays[t.dayOfTheWeek()]);
+  display.print(", ");
+  display.printf("%02d-%02d-%04d", t.day(), t.month(), t.year());
+
+  // Bottom Line: Alarm status
+  display.drawFastHLine(0, 48, 128, SH110X_WHITE);
+  display.setCursor(0, 54);
   display.setTextSize(1);
   if (alarmRinging) {
     display.print(">> BUZZER ACTIVE <<");
