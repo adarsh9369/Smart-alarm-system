@@ -145,9 +145,11 @@ void processBleCommand(String cmd) {
     String dateTimeStr = cmd.substring(10);
     dateTimeStr.trim();
 
-    // Parse YYYY-MM-DDTHH:MM:SS without relying on a non-existent
-    // single-string DateTime constructor in RTClib.
+    // Accept both the preferred local ISO format and legacy Unix timestamp format.
+    // ISO: YYYY-MM-DDTHH:MM:SS | Legacy: 1792584257:17:34:17 (epoch:HH:MM:SS)
     DateTime syncedTime(2000, 1, 1, 0, 0, 0);
+    bool parsedTime = false;
+
     if (dateTimeStr.length() == 19 &&
         dateTimeStr.charAt(4) == '-' &&
         dateTimeStr.charAt(7) == '-' &&
@@ -165,13 +167,26 @@ void processBleCommand(String cmd) {
           hour >= 0 && hour <= 23 && minute >= 0 && minute <= 59 &&
           second >= 0 && second <= 59) {
         syncedTime = DateTime(year, month, day, hour, minute, second);
+        parsedTime = syncedTime.isValid();
+      }
+    } else {
+      // Backward compatibility for webpage versions sending epoch:HH:MM:SS.
+      int firstColon = dateTimeStr.indexOf(':');
+      if (firstColon > 0) {
+        uint32_t epoch = (uint32_t)dateTimeStr.substring(0, firstColon).toInt();
+        DateTime epochTime(epoch);
+        if (epoch >= 1700000000UL && epochTime.year() >= 2024 && epochTime.year() <= 2099) {
+          syncedTime = DateTime(epochTime.year(), epochTime.month(), epochTime.day(),
+                                epochTime.hour(), epochTime.minute(), epochTime.second());
+          parsedTime = true;
+          Serial.println(">> Legacy epoch time format accepted.");
+        }
       }
     }
 
-    if (syncedTime.isValid() &&
+    if (parsedTime && syncedTime.isValid() &&
         syncedTime.year() >= 2024 &&
-        syncedTime.year() <= 2099 &&
-        dateTimeStr.length() == 19) {
+        syncedTime.year() <= 2099) {
       // Update both clocks, then verify the hardware RTC actually accepted it.
       // OLED drawing is kept in loop() to avoid concurrent I2C access from the BLE task.
       internalEpoch = syncedTime.unixtime();
