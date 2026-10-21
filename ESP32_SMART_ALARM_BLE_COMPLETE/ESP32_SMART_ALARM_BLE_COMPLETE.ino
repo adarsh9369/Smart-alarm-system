@@ -82,6 +82,7 @@ int lastAlarmMonth = -1;
 int lastAlarmDay = -1;
 
 unsigned long lastOLEDUpdate = 0;
+volatile bool timeSyncDisplayRefresh = false;
 
 // Internal software clock if hardware RTC is not connected
 unsigned long internalEpoch = 0;
@@ -111,6 +112,8 @@ void notifyWebClient(String msg) {
 }
 
 // ---------------- BLE Command Parser ----------------
+void drawOLED(DateTime t); // Forward declaration
+
 void processBleCommand(String cmd) {
   cmd.trim();
   Serial.print("[BLE COMMAND] ");
@@ -169,14 +172,24 @@ void processBleCommand(String cmd) {
         syncedTime.year() >= 2024 &&
         syncedTime.year() <= 2099 &&
         dateTimeStr.length() == 19) {
-      if (rtcFound) {
-        rtc.adjust(syncedTime);
-      }
-
-      // Keep the software clock in sync too, for boards without a DS3231.
+      // Update both clocks, then verify the hardware RTC actually accepted it.
+      // OLED drawing is kept in loop() to avoid concurrent I2C access from the BLE task.
       internalEpoch = syncedTime.unixtime();
       epochSyncMillis = millis();
 
+      if (rtcFound) {
+        rtc.adjust(syncedTime);
+        delay(5);
+        DateTime rtcReadBack = rtc.now();
+        Serial.print(">> RTC read-back after BLE sync: ");
+        Serial.println(rtcReadBack.timestamp());
+        if (rtcReadBack.unixtime() < syncedTime.unixtime() ||
+            rtcReadBack.unixtime() > syncedTime.unixtime() + 2) {
+          Serial.println(">> WARNING: RTC read-back does not match synced time.");
+        }
+      }
+
+      timeSyncDisplayRefresh = true;
       Serial.print(">> Local date/time synced over BLE: ");
       Serial.println(syncedTime.timestamp());
       notifyWebClient("TIME:SYNCED:OK");
@@ -261,73 +274,38 @@ void drawOLED(DateTime t) {
   display.clearDisplay();
   display.setTextColor(SH110X_WHITE);
 
-  // Status Top Bar
+  // Top row: show only alarm enabled state. Do not show BLE connection status.
   display.setTextSize(1);
   display.setCursor(0, 0);
-  if (bleConnected) {
-    display.print("BLE: CONNECTED");
-  } else {
-    display.print("BLE: READY");
-  }
+  display.print("ALARM: ");
+  display.print(alarmEnabled ? "ON" : "OFF");
 
-  display.setCursor(84, 0);
-  if (alarmRinging) {
-    display.print("!RING!");
-  } else if (alarmEnabled) {
-    display.print("ALM:ON");
-  } else {
-    display.print("ALM:OFF");
-  }
-
-  // Draw Horizontal Separator
-  display.drawFastHLine(0, 10, 128, SH110X_WHITE);
-
-  // Time Digits (Large)
-  display.setTextSize(2);
-  display.setCursor(16, 20);
-
+  // Main clock: larger and visually bolder HH:MM.
   int h = t.hour();
-  int m = t.minute();
-  int s = t.second();
-  String ampm = "";
+  const int m = t.minute();
+  String ampm = (h >= 12) ? "PM" : "AM";
+  h = h % 12;
+  if (h == 0) h = 12;
 
-  if (displayMode == 0 || displayMode == 1) {
-    // 12-Hour format
-    ampm = (h >= 12) ? "PM" : "AM";
-    h = h % 12;
-    if (h == 0) h = 12;
-  }
+  String timeText = two(h) + ":" + two(m);
+  display.setTextSize(3);
+  // Slight overprint makes the built-in font appear bolder.
+  display.setCursor(19, 17);
+  display.print(timeText);
+  display.setCursor(20, 17);
+  display.print(timeText);
 
-  display.print(two(h));
-  display.print(":");
-  display.print(two(m));
-
+  // Short date + weekday on the bottom row.
+  static const char *shortDays[] = {"SUN", "MON", "TUE", "WED", "THU", "FRI", "SAT"};
+  static const char *shortMonths[] = {"JAN", "FEB", "MAR", "APR", "MAY", "JUN",
+                                      "JUL", "AUG", "SEP", "OCT", "NOV", "DEC"};
   display.setTextSize(1);
-  display.setCursor(80, 24);
-  display.print(":" + two(s));
-  display.setCursor(102, 24);
+  display.setCursor(25, 53);
+  display.print(shortDays[t.dayOfTheWeek()]);
+  display.print(" ");
+  display.printf("%02d %s", t.day(), shortMonths[t.month() - 1]);
+  display.setCursor(103, 0);
   display.print(ampm);
-
-  // Weekday + date (derived from RTC/software clock)
-  static const char *weekdays[] = {
-    "Sunday", "Monday", "Tuesday", "Wednesday",
-    "Thursday", "Friday", "Saturday"
-  };
-  display.setTextSize(1);
-  display.setCursor(0, 39);
-  display.print(weekdays[t.dayOfTheWeek()]);
-  display.print(", ");
-  display.printf("%02d-%02d-%04d", t.day(), t.month(), t.year());
-
-  // Bottom Line: Alarm status
-  display.drawFastHLine(0, 48, 128, SH110X_WHITE);
-  display.setCursor(0, 54);
-  display.setTextSize(1);
-  if (alarmRinging) {
-    display.print(">> BUZZER ACTIVE <<");
-  } else {
-    display.printf("Alarm: %02d:%02d | %s", alarmHour, alarmMinute, alarmEnabled ? "ON" : "OFF");
-  }
 
   display.display();
 }
@@ -420,6 +398,16 @@ void setup() {
 // ---------------- Main Loop ----------------
 void loop() {
   DateTime now = getCurrentTime();
+
+  // After BLE sync, refresh immediately from the clock source and log what the OLED will show.
+  if (timeSyncDisplayRefresh) {
+    timeSyncDisplayRefresh = false;
+    now = getCurrentTime();
+    Serial.print(">> OLED refresh using time: ");
+    Serial.println(now.timestamp());
+    drawOLED(now);
+    lastOLEDUpdate = millis();
+  }
 
   // Trigger Daily Alarm when time matches
   if (alarmEnabled && !alarmRinging &&
