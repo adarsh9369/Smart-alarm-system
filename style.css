@@ -1857,3 +1857,29 @@ input, select, textarea, button {
     display: none;
   }
 }
+
+
+/* Wake-up math challenge */
+.alarm-game-panel {
+  width: 100%;
+  max-width: 520px;
+  margin: 18px auto 0;
+  padding: 20px;
+  border: 1px solid rgba(255,255,255,.2);
+  border-radius: 16px;
+  background: rgba(8, 14, 28, .98);
+  color: #fff;
+  text-align: center;
+}
+.alarm-game-panel[hidden] { display: none !important; }
+.alarm-game-heading { font-size: 1.25rem; font-weight: 800; margin-bottom: 8px; }
+.alarm-game-instructions { font-size: .92rem; line-height: 1.5; opacity: .9; }
+.alarm-game-timer { margin: 12px 0; font-size: 1rem; }
+.alarm-game-timer strong { color: #fbbf24; font-size: 1.35rem; font-variant-numeric: tabular-nums; }
+.alarm-game-question { font-size: clamp(2rem, 7vw, 3rem); font-weight: 900; margin: 16px 0; }
+.alarm-game-form { display: flex; flex-direction: column; gap: 10px; }
+.alarm-game-form input { width: 100%; padding: 13px; border-radius: 10px; border: 1px solid #64748b; background: #fff; color: #111827; text-align: center; }
+.alarm-game-submit { width: 100%; justify-content: center; }
+.alarm-game-feedback { min-height: 1.4em; margin-top: 10px; font-weight: 700; }
+.alarm-game-feedback.error { color: #fca5a5; }
+.alarm-game-feedback.success { color: #86efac; }
