@@ -402,15 +402,88 @@ function stopBuzzerAudio() {
 /**
  * DISMISS / TURN OFF ALARM (VHA SE OFF KRNA KA OPTION)
  */
+let alarmGameTimerId = null;
+let alarmGameDeadline = 0;
+let alarmGameAnswer = null;
+let alarmGameRound = 0;
+let alarmGameBuzzerRestarted = false;
+
 function turnOffAlarm() {
+  // Stop the sound temporarily, but do not dismiss the alarm until the game is solved.
   stopBuzzerAudio();
   sendBleCommand('BUZZER:OFF');
+  elements.alarmGamePanel.hidden = false;
+  elements.btnTurnOffAlarm.hidden = true;
+  elements.btnSnoozeAlarm.hidden = true;
+  startAlarmGameRound();
+  showToast('Buzzer paused. Solve the challenge within 3 minutes.', 'warning');
+}
+
+function makeAlarmGameQuestion() {
+  const ops = ['+', '-', '×'];
+  const op = ops[Math.floor(Math.random() * ops.length)];
+  let x = 2 + Math.floor(Math.random() * 19);
+  let y = 2 + Math.floor(Math.random() * 12);
+  if (op === '-' && y > x) [x, y] = [y, x];
+  alarmGameAnswer = op === '+' ? x + y : op === '-' ? x - y : x * y;
+  elements.alarmGameQuestion.textContent = `${x} ${op} ${y} = ?`;
+  elements.alarmGameAnswer.value = '';
+  elements.alarmGameAnswer.focus();
+}
+
+function startAlarmGameRound() {
+  if (alarmGameTimerId) clearInterval(alarmGameTimerId);
+  alarmGameRound++;
+  alarmGameBuzzerRestarted = false;
+  alarmGameDeadline = Date.now() + 180000;
+  makeAlarmGameQuestion();
+  elements.alarmGameFeedback.textContent = 'Answer correctly to stop the alarm permanently.';
+  elements.alarmGameFeedback.className = 'alarm-game-feedback';
+  updateAlarmGameTimer();
+  alarmGameTimerId = setInterval(updateAlarmGameTimer, 250);
+}
+
+function updateAlarmGameTimer() {
+  const remaining = Math.max(0, alarmGameDeadline - Date.now());
+  const seconds = Math.ceil(remaining / 1000);
+  elements.alarmGameTimer.textContent = `${String(Math.floor(seconds / 60)).padStart(2, '0')}:${String(seconds % 60).padStart(2, '0')}`;
+  if (remaining <= 0 && !alarmGameBuzzerRestarted) {
+    alarmGameBuzzerRestarted = true;
+    stopBuzzerAudio();
+    sendBleCommand('BUZZER:ON:RAPID');
+    startBuzzerPattern((state.activeAlarmTriggered && state.activeAlarmTriggered.pattern) || 'rapid');
+    elements.alarmGameFeedback.textContent = 'Time expired! Buzzer is ON again. Solve the next question to stop it.';
+    elements.alarmGameFeedback.className = 'alarm-game-feedback error';
+    showToast('3 minutes expired — buzzer restarted!', 'error');
+    // Continue requiring a solution; another 3-minute interval starts.
+    alarmGameDeadline = Date.now() + 180000;
+    makeAlarmGameQuestion();
+    alarmGameBuzzerRestarted = false;
+  }
+}
+
+function solveAlarmGame(event) {
+  event.preventDefault();
+  const entered = Number(elements.alarmGameAnswer.value);
+  if (entered !== alarmGameAnswer) {
+    elements.alarmGameFeedback.textContent = 'Incorrect. Try again — alarm is not dismissed.';
+    elements.alarmGameFeedback.className = 'alarm-game-feedback error';
+    elements.alarmGameAnswer.select();
+    return;
+  }
+  if (alarmGameTimerId) clearInterval(alarmGameTimerId);
+  alarmGameTimerId = null;
+  stopBuzzerAudio();
+  sendBleCommand('BUZZER:OFF');
+  elements.alarmGamePanel.hidden = true;
+  elements.btnTurnOffAlarm.hidden = false;
+  elements.btnSnoozeAlarm.hidden = false;
   elements.alarmActiveOverlay.style.display = 'none';
   elements.alarmActiveOverlay.classList.remove('active');
   elements.alarmActiveOverlay.hidden = true;
-
-  logToConsole('[ALARM ACTION] Alarm Dismissed & Buzzer Turned OFF by User.', 'sys');
-  showToast('Alarm Stopped. Buzzer Turned OFF.', 'success');
+  elements.alarmGameFeedback.textContent = '';
+  logToConsole('[ALARM ACTION] Challenge solved; alarm permanently dismissed.', 'sys');
+  showToast('Correct! Alarm dismissed.', 'success');
   state.activeAlarmTriggered = null;
 }
 
@@ -957,6 +1030,8 @@ function initEventListeners() {
   // FULL SCREEN ALARM MODAL ACTIONS (OFF & SNOOZE)
   elements.btnTurnOffAlarm.addEventListener('click', turnOffAlarm);
   elements.btnSnoozeAlarm.addEventListener('click', snoozeAlarm);
+  elements.alarmGameForm.addEventListener('submit', solveAlarmGame);
+  elements.alarmGameNewQuestion.addEventListener('click', makeAlarmGameQuestion);
 
   // Trigger Immediate Alarm Modal Simulation
   elements.btnTestAlarmNowModal.addEventListener('click', () => {
