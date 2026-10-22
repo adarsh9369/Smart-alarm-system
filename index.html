@@ -385,7 +385,7 @@
         <span class="bar"></span>
       </div>
 
-      <!-- MAIN OFF & SNOOZE BUTTONS (VHA SE OFF KRNA KA OPTION) -->
+      <!-- Stop starts the required game; alarm is only permanently dismissed after solving. -->
       <div class="alarm-action-buttons">
         <button id="btnTurnOffAlarm" class="btn-alarm-off">
           <svg viewBox="0 0 24 24" width="28" height="28" fill="none" stroke="currentColor" stroke-width="3">
@@ -393,8 +393,8 @@
             <line x1="6" y1="6" x2="18" y2="18"></line>
           </svg>
           <div class="btn-text-col">
-            <span class="main-off-title">OFF ALARM / BUZZER SHUT</span>
-            <span class="main-off-subtitle">Turn off buzzer and stop vibration</span>
+            <span class="main-off-title">STOP ALARM</span>
+            <span class="main-off-subtitle">Solve the game to dismiss it permanently</span>
           </div>
         </button>
 
@@ -406,6 +406,20 @@
           <span>Snooze (<span id="activeSnoozeMinutes">5</span>m)</span>
         </button>
       </div>
+
+      
+      <section id="alarmGamePanel" class="alarm-game-panel" hidden>
+        <div class="alarm-game-heading">🧠 WAKE-UP CHALLENGE</div>
+        <p class="alarm-game-instructions">Solve the math question to turn the alarm off permanently. If 3 minutes run out, the buzzer starts again.</p>
+        <div class="alarm-game-timer">Time left: <strong id="alarmGameTimer">03:00</strong></div>
+        <div id="alarmGameQuestion" class="alarm-game-question">7 + 5 = ?</div>
+        <form id="alarmGameForm" class="alarm-game-form">
+          <input id="alarmGameAnswer" type="number" inputmode="numeric" placeholder="Your answer" autocomplete="off" required />
+          <button type="submit" class="btn-alarm-off alarm-game-submit">CHECK ANSWER</button>
+        </form>
+        <p id="alarmGameFeedback" class="alarm-game-feedback" aria-live="polite"></p>
+        <button id="alarmGameNewQuestion" type="button" class="btn btn-ghost">New question</button>
+      </section>
 
     </div>
   </div>
