@@ -98,6 +98,13 @@ const elements = {
   btnTurnOffAlarm: document.getElementById('btnTurnOffAlarm'),
   btnSnoozeAlarm: document.getElementById('btnSnoozeAlarm'),
   activeSnoozeMinutes: document.getElementById('activeSnoozeMinutes'),
+  alarmGamePanel: document.getElementById('alarmGamePanel'),
+  alarmGameTimer: document.getElementById('alarmGameTimer'),
+  alarmGameQuestion: document.getElementById('alarmGameQuestion'),
+  alarmGameForm: document.getElementById('alarmGameForm'),
+  alarmGameAnswer: document.getElementById('alarmGameAnswer'),
+  alarmGameFeedback: document.getElementById('alarmGameFeedback'),
+  alarmGameNewQuestion: document.getElementById('alarmGameNewQuestion'),
 
   // Firmware Code Modal
   btnOpenFirmwareCode: document.getElementById('btnOpenFirmwareCode'),
